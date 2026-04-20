@@ -4,8 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-# ── Load once at module level (not inside the function) ──
-# Loading inside the function means re-loading every prediction = slow
 scaler        = joblib.load('models/scaler.pkl')
 feature_names = joblib.load('models/feature_names.pkl')
 label_enc     = joblib.load('models/label_encoder.pkl')
@@ -24,30 +22,16 @@ try:
 except ImportError:
     SHAP_AVAILABLE = False
     explainer = None
-    print("⚠️  SHAP not available - using fallback explanation method")
 
 def predict(form_dict: dict) -> dict:
-    """
-    Input:  raw form values as a Python dict
-    Output: dict with keys:
-            score       — float 0.0–1.0 (probability of burnout)
-            risk_label  — str  e.g. 'High', 'Medium', 'Low'
-            confidence  — float 0–100 (%)
-            shap_path   — str path to saved waterfall .png
-    """
-    # Build single-row DataFrame, align columns to training order
     row = pd.DataFrame([form_dict])
     row = row.reindex(columns=feature_names, fill_value=0)
-
-    # Scale exactly as training data was scaled
     row_sc = scaler.transform(row)
 
-    # Predict
     pred   = model.predict(row_sc)[0]
     proba  = model.predict_proba(row_sc)[0]
     conf   = round(float(max(proba)) * 100, 1)
     label  = label_enc.inverse_transform([pred])[0]
-    # Score represents probability of HIGH burnout (class 0)
     score  = round(float(proba[0]), 3)
 
     # Generate explanation visualization
@@ -81,15 +65,27 @@ def predict(form_dict: dict) -> dict:
         except Exception as e:
             _create_fallback_explanation(row_sc, score)
     else:
-        # Fallback: create simple feature importance plot
         _create_fallback_explanation(row_sc, score)
 
-    return {
+    result = {
         'score':      score,
         'risk_label': str(label),
         'confidence': conf,
         'shap_path':  'visuals/shap_live.png',
     }
+
+    try:
+        from db.mongo_handler import insert_submission
+        insert_submission({
+            **form_dict,
+            'burnout_score': score,
+            'risk_label':    str(label),
+            'confidence':    conf,
+        })
+    except Exception as e:
+        pass
+
+    return result
 
 
 def _create_fallback_explanation(X_scaled, burnout_score):

@@ -1,6 +1,4 @@
-"""
-MongoDB handler using MongoEngine ODM
-"""
+
 from db.models import BurnoutSubmission, init_db
 from datetime import datetime
 import pandas as pd

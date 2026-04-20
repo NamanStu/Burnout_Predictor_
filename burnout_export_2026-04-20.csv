@@ -1,0 +1,16 @@
+student_id,age,gender,course,semester,study_hours,sleep_hours,assign_pressure,exam_pressure,attend_stress,screen_time,stress_level,anxiety_level,exercise_freq,social_freq,emotional_exh,lost_motiv,support_level,mentally_drain,difficulty_conc,burnout_score,risk_label,confidence,notes,timestamp
+STU001,21,Male,BTech,4,0,0,0,5,0,0,7,5,,,,,0,,,0.145,Medium,85.5,,2026-04-20T11:06:51.972000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.021,Medium,97.8,,2026-04-20T10:31:18.463000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T10:18:40.966000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T10:10:28.422000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T07:56:52.111000
+STU001,21,Female,BTech,5,0,0,0,5,0,0,5,5,,,,,0,,,0.026,Medium,97.4,,2026-04-20T07:39:28.046000
+STU001,21,Non-binary,BSc,4,0,0,0,5,0,0,4,5,,,,,0,,,0.017,Medium,98.2,,2026-04-20T06:35:42.094000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T06:23:09.548000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T05:42:34.371000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T05:27:45.362000
+STU003,21,Male,BTech,3,0,0,0,9,0,0,10,10,,,,,0,,,0.999,High,99.9,,2026-04-20T05:22:11.871000
+STU002,21,Male,BTech,3,0,0,0,6,0,0,5,5,,,,,0,,,0.222,Medium,77.8,,2026-04-20T05:19:57.077000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T05:19:38.153000
+STU002,21,Male,BTech,7,0,0,0,9,0,0,7,3,,,,,0,,,0.121,Medium,87.9,,2026-04-20T05:16:33.128000
+STU001,21,Male,BTech,4,0,0,0,5,0,0,5,5,,,,,0,,,0.029,Medium,97.0,,2026-04-20T05:15:57.353000

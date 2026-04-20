@@ -1,387 +1,305 @@
+
 import tkinter as tk
-from tkinter import ttk, messagebox
-from db import mongo_handler
-from datetime import datetime
+from tkinter import ttk
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
+C = {
+    "bg":          "#0D0A0A",
+    "surface":     "#1A1010",
+    "surface2":    "#241515",
+    "border":      "#3D2020",
+    "accent":      "#C0392B",
+    "warn":        "#E74C3C",
+    "ok":          "#2ECC71",
+    "mid":         "#E67E22",
+    "text":        "#F0E6E6",
+    "text_dim":    "#8A7070",
+    "gold":        "#D4A017",
+    "gold_dim":    "#8A6810",
+}
+FONT_FAMILY = "Segoe UI"
+MPL_STYLE = {
+    "figure.facecolor":  C["surface"],
+    "axes.facecolor":    C["surface"],
+    "axes.edgecolor":    C["border"],
+    "axes.labelcolor":   C["text_dim"],
+    "xtick.color":       C["text_dim"],
+    "ytick.color":       C["text_dim"],
+    "grid.color":        C["border"],
+    "text.color":        C["text"],
+}
+
+
+def _stat_card(parent, title, value, subtitle="", color=None):
+    color = color or C["accent"]
+    card = tk.Frame(parent, bg=C["surface"],
+                    highlightbackground=C["border"],
+                    highlightthickness=1)
+    card.pack(side="left", fill="both", expand=True, padx=6)
+
+    tk.Label(card, text=title,
+             font=(FONT_FAMILY, 8, "bold"),
+             bg=C["surface"], fg=C["text_dim"]).pack(padx=14, pady=(14, 4), anchor="w")
+    tk.Label(card, text=str(value),
+             font=(FONT_FAMILY, 26, "bold"),
+             bg=C["surface"], fg=color).pack(padx=14, anchor="w")
+    if subtitle:
+        tk.Label(card, text=subtitle,
+                 font=(FONT_FAMILY, 8),
+                 bg=C["surface"], fg=C["text_dim"]).pack(padx=14, pady=(2, 12), anchor="w")
+
 
 class TeacherDashboard:
+
     def __init__(self, notebook):
-        self.notebook = notebook
-        self.frame = ttk.Frame(notebook)
-        notebook.add(self.frame, text='Teacher Dashboard')
+        self.frame = tk.Frame(notebook, bg=C["bg"])
+        self._build()
 
-        # Create a sub-notebook for Results, Tracker, Analytics
-        self.sub_notebook = ttk.Notebook(self.frame)
-        self.sub_notebook.pack(fill='both', expand=True, padx=0, pady=0)
+    def _build(self):
+        toolbar = tk.Frame(self.frame, bg=C["surface"], height=60)
+        toolbar.pack(fill="x")
+        toolbar.pack_propagate(False)
 
-        self._create_results_tab()
-        self._create_tracker_tab()
-        self._create_analytics_tab()
+        tk.Label(toolbar, text="🧑‍🏫  Teacher Dashboard",
+                 font=(FONT_FAMILY, 13, "bold"),
+                 bg=C["surface"], fg=C["text"]).pack(side="left", padx=24, pady=0)
 
-    def _create_results_tab(self):
-        """Display all students' latest burnout results."""
-        tab = ttk.Frame(self.sub_notebook)
-        self.sub_notebook.add(tab, text='Results')
+        right = tk.Frame(toolbar, bg=C["surface"])
+        right.pack(side="right", padx=16)
 
-        # Title
-        title_frame = tk.Frame(tab, bg='#3a3a3a')
-        title_frame.pack(fill='x', padx=0, pady=0)
-        ttk.Label(title_frame, text="All Students Burnout Overview",
-            style='Heading.TLabel').pack(pady=10)
+        for text, cmd in [("Refresh", self._load), ("Export CSV", self._export)]:
+            btn = tk.Frame(right, bg=C["accent"], cursor="hand2")
+            btn.pack(side="left", padx=4)
+            lbl = tk.Label(btn, text=f" {text} ",
+                           font=(FONT_FAMILY, 9, "bold"),
+                           bg=C["accent"], fg=C["text"],
+                           padx=10, pady=6)
+            lbl.pack()
+            _cmd = cmd
+            btn.bind("<Button-1>", lambda _, c=_cmd: c())
+            lbl.bind("<Button-1>", lambda _, c=_cmd: c())
 
-        # Scrollable content
-        canvas = tk.Canvas(tab, bg='#2c2c2c', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(tab, orient='vertical', command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg='#2c2c2c')
+        canvas = tk.Canvas(self.frame, bg=C["bg"],
+                           highlightthickness=0, bd=0)
+        vsb = tk.Scrollbar(self.frame, orient="vertical",
+                           command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        self._inner = tk.Frame(canvas, bg=C["bg"])
+        win = canvas.create_window((0, 0), window=self._inner, anchor="nw")
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfig(win, width=e.width))
+        self._inner.bind("<Configure>",
+                         lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind_all("<MouseWheel>",
+                        lambda e: canvas.yview_scroll(-1*(e.delta//120), "units"))
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self._load()
 
-        canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-
-        # Content area for results
-        content_frame = tk.Frame(scrollable_frame, bg='#2c2c2c')
-        content_frame.pack(fill='both', expand=True, padx=20, pady=10)
-
-        # Refresh button
-        btn_frame = tk.Frame(content_frame, bg='#2c2c2c')
-        btn_frame.pack(fill='x', pady=(0, 10))
-        ttk.Button(btn_frame, text="Refresh Results",
-            command=lambda: self._refresh_results(content_frame)).pack(side='left')
-
-        # Results display area
-        self.results_display = tk.Frame(content_frame, bg='#2c2c2c')
-        self.results_display.pack(fill='both', expand=True)
-
-        # Note: Loading is deferred to avoid MongoDB connection at startup
-        ttk.Label(self.results_display, text="Click 'Refresh Results' to load student data",
-            foreground='#b0b0b0').pack(pady=20)
-
-    def _refresh_results(self, parent):
-        """Fetch and display all students' latest results."""
-        # Clear previous results
-        for widget in self.results_display.winfo_children():
-            widget.destroy()
+    def _load(self):
+        for w in self._inner.winfo_children():
+            w.destroy()
 
         try:
-            df = mongo_handler.get_all_latest()
+            from db.mongo_handler import get_recent_n
+            df = get_recent_n(200)
+            records = df.to_dict(orient="records") if not df.empty else []
+        except Exception as e:
+            records = []
 
-            if df.empty:
-                ttk.Label(self.results_display,
-                    text="No student data available",
-                    foreground='#b0b0b0').pack(pady=20)
-                return
+        self._render(records)
 
-            # Column headers
-            header_frame = tk.Frame(self.results_display, bg='#3a3a3a')
-            header_frame.pack(fill='x', padx=10, pady=(0, 5))
-
-            headers = ['Student ID', 'Burnout Score', 'Risk Level', 'Confidence', 'Last Updated']
-            for i, header in enumerate(headers):
-                ttk.Label(header_frame, text=header,
-                    font=('Arial', 9, 'bold'),
-                    width=18).grid(row=0, column=i, padx=5, pady=5)
-
-            # Rows for each student
-            for idx, row in df.iterrows():
-                row_frame = tk.Frame(self.results_display, bg='#3a3a3a')
-                row_frame.pack(fill='x', padx=10, pady=2)
-
-                student_id = str(row.get('student_id', 'N/A'))
-                score = row.get('burnout_score', 0)
-                risk = str(row.get('risk_label', 'N/A'))
-                confidence = row.get('confidence', 0)
-                timestamp = row.get('timestamp', datetime.now())
-
-                # Color based on risk level
-                risk_colors = {
-                    'High': '#E74C3C',
-                    'Medium': '#F39C12',
-                    'Low': '#27AE60'
-                }
-                risk_color = risk_colors.get(risk, '#b0b0b0')
-
-                ttk.Label(row_frame, text=student_id, width=18).grid(
-                    row=0, column=0, padx=5, pady=5)
-                ttk.Label(row_frame, text=f"{score:.3f}", width=18).grid(
-                    row=0, column=1, padx=5, pady=5)
-
-                risk_label = tk.Label(row_frame, text=risk,
-                    bg='#3a3a3a', fg=risk_color, font=('Arial', 10, 'bold'),
-                    width=16, anchor='center')
-                risk_label.grid(row=0, column=2, padx=5, pady=5)
-
-                ttk.Label(row_frame, text=f"{confidence:.1f}%", width=18).grid(
-                    row=0, column=3, padx=5, pady=5)
-
-                # Format timestamp
-                if isinstance(timestamp, datetime):
-                    time_str = timestamp.strftime('%Y-%m-%d %H:%M')
-                else:
-                    time_str = str(timestamp)
-                ttk.Label(row_frame, text=time_str, width=18).grid(
-                    row=0, column=4, padx=5, pady=5)
-
-        except (ConnectionError, Exception) as e:
-            ttk.Label(self.results_display,
-                text=f"MongoDB Error: {str(e)}\n\nPlease ensure MongoDB is running locally at localhost:27017",
-                foreground='#ff6b6b', wraplength=300, justify='left').pack(pady=20)
-
-    def _create_tracker_tab(self):
-        """Track trends for a selected student."""
-        tab = ttk.Frame(self.sub_notebook)
-        self.sub_notebook.add(tab, text='Tracker')
-
-        # Title
-        title_frame = tk.Frame(tab, bg='#3a3a3a')
-        title_frame.pack(fill='x', padx=0, pady=0)
-        ttk.Label(title_frame, text="Student Burnout Trends",
-            style='Heading.TLabel').pack(pady=10)
-
-        # Scrollable content
-        canvas = tk.Canvas(tab, bg='#2c2c2c', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(tab, orient='vertical', command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg='#2c2c2c')
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-
-        # Content area
-        content_frame = tk.Frame(scrollable_frame, bg='#2c2c2c')
-        content_frame.pack(fill='both', expand=True, padx=20, pady=10)
-
-        # Student selector
-        selector_frame = tk.Frame(content_frame, bg='#2c2c2c')
-        selector_frame.pack(fill='x', pady=(0, 10))
-
-        ttk.Label(selector_frame, text="Select Student:").pack(side='left', padx=5)
-
-        self.student_var = tk.StringVar()
-        self.student_combo = ttk.Combobox(selector_frame, textvariable=self.student_var,
-            state='readonly', width=20)
-        self.student_combo.pack(side='left', padx=5)
-
-        ttk.Button(selector_frame, text="Load Trends",
-            command=lambda: self._refresh_tracker()).pack(side='left', padx=5)
-        
-        ttk.Button(selector_frame, text="Refresh Students",
-            command=lambda: self._load_student_list()).pack(side='left', padx=5)
-
-        # Tracker display area
-        self.tracker_display = tk.Frame(content_frame, bg='#2c2c2c')
-        self.tracker_display.pack(fill='both', expand=True)
-
-        # Note: Student list loading is deferred to avoid MongoDB connection at startup
-        ttk.Label(self.tracker_display, text="Click 'Refresh Students' to load student list",
-            foreground='#b0b0b0').pack(pady=20)
-
-    def _load_student_list(self):
-        """Load list of students from MongoDB."""
-        try:
-            students = mongo_handler.get_all_students()
-            self.student_combo['values'] = students
-            if students:
-                self.student_combo.set(students[0])
-        except ConnectionError:
-            self.student_combo['values'] = []
-
-    def _refresh_tracker(self):
-        """Display trends for selected student."""
-        # Clear previous data
-        for widget in self.tracker_display.winfo_children():
-            widget.destroy()
-
-        student_id = self.student_var.get()
-        if not student_id:
-            ttk.Label(self.tracker_display,
-                text="Please select a student",
-                foreground='#b0b0b0').pack(pady=20)
+    def _render(self, records):
+        total = len(records)
+        if total == 0:
+            tk.Label(self._inner,
+                     text="No student records found in the database.",
+                     font=(FONT_FAMILY, 12),
+                     bg=C["bg"], fg=C["text_dim"]).pack(pady=60)
             return
 
-        try:
-            df = mongo_handler.get_all_by_student(student_id)
+        scores = [float(r.get("burnout_score", 0)) for r in records]
+        high   = sum(1 for s in scores if s > 0.65)
+        mid    = sum(1 for s in scores if 0.4 < s <= 0.65)
+        low    = sum(1 for s in scores if s <= 0.4)
+        avg    = sum(scores) / total if total else 0
 
-            if df.empty:
-                ttk.Label(self.tracker_display,
-                    text=f"No data available for student {student_id}",
-                    foreground='#b0b0b0').pack(pady=20)
-                return
+        stats_row = tk.Frame(self._inner, bg=C["bg"])
+        stats_row.pack(fill="x", padx=18, pady=(18, 8))
+        tk.Frame(stats_row, bg=C["bg"]).pack(side="left")
 
-            # Display trend data
-            info_text = f"Submissions for {student_id}:\n\n"
+        _stat_card(stats_row, "TOTAL STUDENTS",  total, "submitted", C["accent"])
+        _stat_card(stats_row, "HIGH RISK",        high,  "need attention", C["warn"])
+        _stat_card(stats_row, "MODERATE",         mid,   "watch closely",  C["mid"])
+        _stat_card(stats_row, "LOW RISK",          low,  "doing well",     C["ok"])
+        _stat_card(stats_row, "AVG SCORE", f"{avg:.2f}", "burnout score",  C["accent"])
 
-            for idx, row in df.iterrows():
-                score = row.get('burnout_score', 'N/A')
-                risk = row.get('risk_label', 'N/A')
-                confidence = row.get('confidence', 'N/A')
-                timestamp = row.get('timestamp', 'N/A')
+        charts_row = tk.Frame(self._inner, bg=C["bg"])
+        charts_row.pack(fill="x", padx=18, pady=8)
 
-                if isinstance(timestamp, datetime):
-                    time_str = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    time_str = str(timestamp)
+        self._pie_chart(charts_row, high, mid, low)
+        self._histogram(charts_row, scores)
 
-                info_text += f"• {time_str}\n"
-                info_text += f"  Score: {score:.3f} | Risk: {risk} | Confidence: {confidence:.1f}%\n\n"
+        self._risk_table(records)
 
-            display_label = tk.Text(self.tracker_display, height=15, width=50,
-                font=('Arial', 10), bg='#3a3a3a', fg='#ffffff',
-                insertbackground='white', wrap='word')
-            display_label.pack(fill='both', expand=True, padx=10, pady=10)
-            display_label.insert('1.0', info_text)
-            display_label.config(state='disabled')
+    def _pie_chart(self, parent, high, mid, low):
+        card = tk.Frame(parent, bg=C["surface"],
+                        highlightbackground=C["border"],
+                        highlightthickness=1)
+        card.pack(side="left", fill="both", expand=True, padx=(0, 6))
 
-        except (ConnectionError, Exception) as e:
-            ttk.Label(self.tracker_display,
-                text=f"MongoDB Error: {str(e)}\n\nPlease ensure MongoDB is running at localhost:27017",
-                foreground='#ff6b6b', wraplength=300, justify='left').pack(pady=20)
+        with plt.rc_context(MPL_STYLE):
+            fig = Figure(figsize=(4, 3.4), dpi=96)
+            ax = fig.add_subplot(111)
+            vals = [high, mid, low]
+            labels = ["High", "Moderate", "Low"]
+            colors = [C["warn"], C["mid"], C["ok"]]
+            non_zero = [(v, l, c) for v, l, c in zip(vals, labels, colors) if v > 0]
+            if non_zero:
+                v, l, c = zip(*non_zero)
+                ax.pie(v, labels=l, colors=c,
+                       autopct="%1.0f%%",
+                       pctdistance=0.75,
+                       wedgeprops=dict(width=0.55, edgecolor=C["surface"]),
+                       textprops=dict(color=C["text"], fontsize=9))
+            ax.set_title("Risk Distribution", fontsize=10, pad=8)
+            fig.tight_layout()
 
-    def _create_analytics_tab(self):
-        """Display analytics and summary statistics."""
-        tab = ttk.Frame(self.sub_notebook)
-        self.sub_notebook.add(tab, text='Analytics')
+        FigureCanvasTkAgg(fig, master=card).get_tk_widget().pack(
+            fill="both", expand=True, padx=4, pady=4)
 
-        # Title
-        title_frame = tk.Frame(tab, bg='#3a3a3a')
-        title_frame.pack(fill='x', padx=0, pady=0)
-        ttk.Label(title_frame, text="Class Analytics & Summary",
-            style='Heading.TLabel').pack(pady=10)
+    def _histogram(self, parent, scores):
+        card = tk.Frame(parent, bg=C["surface"],
+                        highlightbackground=C["border"],
+                        highlightthickness=1)
+        card.pack(side="left", fill="both", expand=True, padx=(6, 0))
 
-        # Scrollable content
-        canvas = tk.Canvas(tab, bg='#2c2c2c', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(tab, orient='vertical', command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg='#2c2c2c')
+        with plt.rc_context(MPL_STYLE):
+            fig = Figure(figsize=(5, 3.4), dpi=96)
+            ax = fig.add_subplot(111)
+            ax.hist(scores, bins=10, range=(0, 1),
+                    color=C["accent"], edgecolor=C["surface"],
+                    alpha=0.85)
+            ax.axvline(0.65, color=C["warn"], linestyle="--", linewidth=1.2, alpha=0.7)
+            ax.axvline(0.40, color=C["mid"],  linestyle="--", linewidth=1.2, alpha=0.7)
+            ax.set_xlabel("Burnout Score", fontsize=9)
+            ax.set_ylabel("Students",       fontsize=9)
+            ax.set_title("Score Distribution", fontsize=10)
+            ax.grid(axis="y", linestyle="--", alpha=0.3)
+            fig.tight_layout()
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        FigureCanvasTkAgg(fig, master=card).get_tk_widget().pack(
+            fill="both", expand=True, padx=4, pady=4)
+
+    def _risk_table(self, records):
+        card = tk.Frame(self._inner, bg=C["surface"],
+                        highlightbackground=C["border"],
+                        highlightthickness=1)
+        card.pack(fill="x", padx=18, pady=(8, 8))
+
+        tk.Label(card, text="⚠️  AT-RISK STUDENTS",
+                 font=(FONT_FAMILY, 8, "bold"),
+                 bg=C["surface"], fg=C["warn"]).pack(padx=16, pady=(12, 6), anchor="w")
+
+        cols = ("Student ID", "Score", "Risk Level", "Timestamp")
+        tree = ttk.Treeview(card, columns=cols, show="headings", height=6)
+
+        style = ttk.Style()
+        style.configure("Dark.Treeview",
+                         background=C["surface2"],
+                         foreground=C["text"],
+                         fieldbackground=C["surface2"],
+                         rowheight=28)
+        style.configure("Dark.Treeview.Heading",
+                         background=C["surface"],
+                         foreground=C["text_dim"],
+                         font=(FONT_FAMILY, 9, "bold"))
+        style.map("Dark.Treeview",
+                  background=[("selected", C["accent"])])
+        tree.configure(style="Dark.Treeview")
+
+        for col in cols:
+            tree.heading(col, text=col)
+            tree.column(col, anchor="center",
+                        width=160 if col == "Timestamp" else 120)
+
+        at_risk = sorted(
+            [r for r in records if float(r.get("burnout_score", 0)) > 0.4],
+            key=lambda r: float(r.get("burnout_score", 0)),
+            reverse=True
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        if at_risk:
+            for r in at_risk:
+                s = float(r.get("burnout_score", 0))
+                level = "🔴 High" if s > 0.65 else "🟡 Moderate"
+                tree.insert("", "end", values=(
+                    r.get("student_id", "—"),
+                    f"{s:.2f}",
+                    level,
+                    str(r.get("timestamp", "—"))[:19],
+                ))
+        else:
+            tree.insert("", "end", values=("—", "—", "No at-risk students", "—"))
 
-        canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
+        tree.pack(fill="x", padx=12, pady=(0, 12))
 
-        # Content area
-        content_frame = tk.Frame(scrollable_frame, bg='#2c2c2c')
-        content_frame.pack(fill='both', expand=True, padx=40, pady=20)
+        card2 = tk.Frame(self._inner, bg=C["surface"],
+                         highlightbackground=C["border"],
+                         highlightthickness=1)
+        card2.pack(fill="x", padx=18, pady=(0, 24))
 
-        # Refresh button
-        btn_frame = tk.Frame(content_frame, bg='#2c2c2c')
-        btn_frame.pack(fill='x', pady=(0, 20))
-        ttk.Button(btn_frame, text="Refresh Analytics",
-            command=lambda: self._refresh_analytics(content_frame)).pack(side='left')
+        tk.Label(card2, text="✅  DOING WELL",
+                 font=(FONT_FAMILY, 8, "bold"),
+                 bg=C["surface"], fg=C["ok"]).pack(padx=16, pady=(12, 6), anchor="w")
 
-        # Analytics display area
-        self.analytics_display = tk.Frame(content_frame, bg='#2c2c2c')
-        self.analytics_display.pack(fill='both', expand=True)
+        tree2 = ttk.Treeview(card2, columns=cols, show="headings", height=6)
+        tree2.configure(style="Dark.Treeview")
 
-        # Note: Loading is deferred to avoid MongoDB connection at startup
-        ttk.Label(self.analytics_display, text="Click 'Refresh Analytics' to load class statistics",
-            foreground='#b0b0b0').pack(pady=20)
+        for col in cols:
+            tree2.heading(col, text=col)
+            tree2.column(col, anchor="center",
+                         width=160 if col == "Timestamp" else 120)
 
-    def _refresh_analytics(self, parent):
-        """Fetch and display class analytics."""
-        # Clear previous analytics
-        for widget in self.analytics_display.winfo_children():
-            widget.destroy()
+        doing_well = sorted(
+            [r for r in records if float(r.get("burnout_score", 0)) <= 0.4],
+            key=lambda r: float(r.get("burnout_score", 0))
+        )
 
+        if doing_well:
+            for r in doing_well:
+                s = float(r.get("burnout_score", 0))
+                tree2.insert("", "end", values=(
+                    r.get("student_id", "—"),
+                    f"{s:.2f}",
+                    "🟢 Low Risk",
+                    str(r.get("timestamp", "—"))[:19],
+                ))
+        else:
+            tree2.insert("", "end", values=("—", "—", "No low-risk students yet", "—"))
+
+        tree2.pack(fill="x", padx=12, pady=(0, 12))
+
+    def _export(self):
         try:
-            df = mongo_handler.get_faculty_summary()
-
-            if df.empty:
-                ttk.Label(self.analytics_display,
-                    text="No student data available",
-                    foreground='#b0b0b0').pack(pady=20)
-                return
-
-            # Calculate statistics
-            all_latest = mongo_handler.get_all_latest()
-
-            if not all_latest.empty:
-                avg_burnout = all_latest['burnout_score'].mean()
-                high_risk = len(all_latest[all_latest['risk_label'] == 'High'])
-                medium_risk = len(all_latest[all_latest['risk_label'] == 'Medium'])
-                low_risk = len(all_latest[all_latest['risk_label'] == 'Low'])
-                total_students = len(all_latest)
-
-                # Display summary cards
-                stat_frame = tk.Frame(self.analytics_display, bg='#2c2c2c')
-                stat_frame.pack(fill='x', pady=10)
-
-                # Card: Total Students
-                card1 = tk.Frame(stat_frame, bg='#3a3a3a', relief='flat', bd=1)
-                card1.pack(side='left', padx=10, pady=5, fill='both', expand=True)
-                ttk.Label(card1, text="Total Students",
-                    font=('Arial', 10, 'bold')).pack(pady=5)
-                ttk.Label(card1, text=str(total_students),
-                    font=('Arial', 16, 'bold'), foreground='#4CAF50').pack(pady=5)
-
-                # Card: Average Burnout
-                card2 = tk.Frame(stat_frame, bg='#3a3a3a', relief='flat', bd=1)
-                card2.pack(side='left', padx=10, pady=5, fill='both', expand=True)
-                ttk.Label(card2, text="Avg Burnout Score",
-                    font=('Arial', 10, 'bold')).pack(pady=5)
-                ttk.Label(card2, text=f"{avg_burnout:.3f}",
-                    font=('Arial', 16, 'bold'), foreground='#F39C12').pack(pady=5)
-
-                # Risk distribution
-                dist_frame = tk.Frame(self.analytics_display, bg='#2c2c2c')
-                dist_frame.pack(fill='x', pady=10)
-
-                ttk.Label(dist_frame, text="Risk Distribution:",
-                    font=('Arial', 11, 'bold')).pack(anchor='w', padx=10)
-
-                risk_text = f"🔴 High Risk: {high_risk} students ({high_risk/total_students*100:.1f}%)\n"
-                risk_text += f"🟡 Medium Risk: {medium_risk} students ({medium_risk/total_students*100:.1f}%)\n"
-                risk_text += f"🟢 Low Risk: {low_risk} students ({low_risk/total_students*100:.1f}%)"
-
-                risk_label = tk.Label(dist_frame, text=risk_text,
-                    bg='#3a3a3a', fg='#ffffff', font=('Arial', 10),
-                    justify='left', padx=20, pady=10)
-                risk_label.pack(anchor='w', padx=10)
-
-                # Top at-risk students
-                top_frame = tk.Frame(self.analytics_display, bg='#2c2c2c')
-                top_frame.pack(fill='both', expand=True, pady=10)
-
-                ttk.Label(top_frame, text="Top At-Risk Students:",
-                    font=('Arial', 11, 'bold')).pack(anchor='w', padx=10)
-
-                top_students = all_latest.nlargest(5, 'burnout_score')
-                if not top_students.empty:
-                    for idx, row in top_students.iterrows():
-                        student_id = row['student_id']
-                        score = row['burnout_score']
-                        risk = row['risk_label']
-
-                        risk_color = {
-                            'High': '#E74C3C',
-                            'Medium': '#F39C12',
-                            'Low': '#27AE60'
-                        }.get(risk, '#b0b0b0')
-
-                        info_text = f"{student_id}: {score:.3f} ({risk})"
-                        lbl = tk.Label(top_frame, text=info_text,
-                            bg='#3a3a3a', fg=risk_color, font=('Arial', 9),
-                            padx=20, pady=5)
-                        lbl.pack(anchor='w', padx=10, pady=2)
-
-        except (ConnectionError, Exception) as e:
-            ttk.Label(self.analytics_display,
-                text=f"MongoDB Error: {str(e)}\n\nPlease ensure MongoDB is running at localhost:27017",
-                foreground='#ff6b6b', wraplength=300, justify='left').pack(pady=20)
+            from db.mongo_handler import get_recent_n
+            import csv, datetime
+            df = get_recent_n(500)
+            records = df.to_dict(orient="records") if not df.empty else []
+            fname = f"burnout_export_{datetime.date.today()}.csv"
+            with open(fname, "w", newline="") as f:
+                if records:
+                    writer = csv.DictWriter(f, fieldnames=records[0].keys())
+                    writer.writeheader()
+                    writer.writerows(records)
+            import tkinter.messagebox
+            tk.messagebox.showinfo("Export", f"Saved to {fname}")
+        except Exception as e:
+            import tkinter.messagebox
+            tk.messagebox.showerror("Export Failed", str(e))
